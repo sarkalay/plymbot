@@ -1,6 +1,4 @@
-# gabagool_full_pro_2025.py
-# လိုအပ်တာ: pip install websockets ecdsa requests python-dotenv hashlib
-
+# gabagool_1dollar_test.py
 import asyncio
 import json
 import time
@@ -13,153 +11,107 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==================== CONFIG ====================
-PRIVATE_KEY_HEX = os.getenv("PRIVATE_KEY")          # 64-char hex (0x မပါ)
-API_KEY = os.getenv("API_KEY")                      # pk_...
+# ==================== $1 TEST CONFIG ====================
+PRIVATE_KEY_HEX = os.getenv("PRIVATE_KEY")    # သင့် wallet ရဲ့ private key
+API_KEY = os.getenv("API_KEY")                # Polymarket မှာ ဖန်တီးထားတဲ့ API key
 
-MARKET = "0x8a03b8f1f7c3e7ae5e9f0a8b2b6930d5c6f9c1b8e8d8f8e8d8f8e8d8f8e8d8f"  # တကယ်ဈေးကွက် ID
+# ဒီနေ့ တကယ်ရှိနေတဲ့ Bitcoin 15-min market (Dec 2025 အခုချိန်)
+MARKET = "0x8e9b6942b4dac3117dadfacac2edb390b6d62d59c14152774bb5fcd983fc134e"   # တကယ့် condition_id
+YES_TOKEN = "97903176351431922708174589095785250720005603322548408400250303502737367801340"
+NO_TOKEN  = "107823720557377457341718799936440916152062911999998247062332407139732672032472"
 
-TARGET_PAIR_COST = 0.982        # ဘယ်လောက်အထိ ညှစ်မယ်
-MAX_EXPOSURE = 4000             # တစ်ဈေးကွက်မှာ အများဆုံး USD
-MIN_PROFIT_TO_EXIT = 18         # အနည်းဆုံး ဒေါ်လာ ၁၈ အမြတ်ရရင် ချက်ချင်းထွက်
-BASE_URL = "https://clob.polymarket.com"
+# $1 စမ်းဖို့ ပဲ ထားထားတာ
+MAX_EXPOSURE = 5.0               # အများဆုံး $5 ပဲ သုံးမယ်
+TARGET_PAIR_COST = 0.985         # နည်းနည်းလျှော့ထားတာ (ပိုလွယ်အောင်)
+MIN_PROFIT_TO_EXIT = 0.7         # 70 cents ရရင် ချက်ချင်းထွက်
 
-# လက်ကျန်မှတ်တမ်း
 qty_yes = qty_no = cost_yes = cost_no = 0.0
 
 sk = SigningKey.from_string(bytes.fromhex(PRIVATE_KEY_HEX), curve=SECP256k1)
-vk = sk.verifying_key
 
 def get_pair_cost():
     if qty_yes + qty_no == 0: return 999
-    return (cost_yes / qty_yes if qty_yes else 0) + (cost_no / qty_no if qty_no else 0)
+    return (cost_yes/qty_yes if qty_yes else 0) + (cost_no/qty_no if qty_no else 0)
 
 def sign_order(order):
-    msg = json.dumps(order, separators=(',', ':'), ensure_ascii=False).encode()
-    msg_hash = hashlib.sha256(msg).digest()
-    signature = sk.sign(msg_hash)
-    return signature.hex()
+    msg = json.dumps(order, separators=(',',':')).encode()
+    return sk.sign(hashlib.sha256(msg).digest()).hex()
 
-async def place_order(side: str, price: float, amount: float):
-    token_id = "97903176351431922708174589095785250720005603322548408400250303502737367801340" if side == "YES" else "107823720557377457341718799936440916152062911999998247062332407139732672032472"
-    
+async def place_order(side: str, price: float, usd_amount: float):
+    token_id = YES_TOKEN if side == "YES" else NO_TOKEN
+    amount = round(usd_amount / price, 6)
+
     order = {
         "token_id": token_id,
         "price": f"{price:.4f}",
-        "amount": f"{amount:.6f}",
+        "amount": f"{amount}",
         "side": "BUY",
         "market": MARKET,
         "api_key": API_KEY,
-        "nonce": str(int(time.time() * 1000))
+        "nonce": str(int(time.time()*1000))
     }
     order["signature"] = sign_order(order)
-    
-    try:
-        r = requests.post(f"{BASE_URL}/order", json=order, timeout=10)
-        if r.status_code == 200:
-            print(f"  SUCCESS: BUY {amount:.2f} {side} @ {price:.4f}")
-            return True
-        else:
-            print(f"  FAILED: {r.text}")
-            return False
-    except Exception as e:
-        print("Order error:", e)
-        return False
 
-async def cancel_and_exit():
-    global qty_yes, qty_no, cost_yes, cost_no
-    print("\nAUTO-EXIT စတင်နေသည်...")
-    
-    # အားလုံးကို market price နဲ့ sell back
-    for side, qty in [("YES", qty_yes), ("NO", qty_no)]:
-        if qty > 0.1:
-            token_id = requests.get(f"{BASE_URL}/markets?market={MARKET}").json()["tokens"]
-            token = next(t for t in token_id if t["outcome"] == side)
-            sell_order = {
-                "token_id": token["token_id"],
-                "amount": f"{qty:.6f}",
-                "side": "SELL",
-                "market": MARKET,
-                "api_key": API_KEY,
-                "nonce": str(int(time.time() * 1000))
-            }
-            sell_order["signature"] = sign_order(sell_order)
-            requests.post(f"{BASE_URL}/order", json=sell_order)
-            print(f"  SOLD {qty:.2f} {side}")
-    
-    profit = min(qty_yes, qty_no) - (cost_yes + cost_no)
-    print(f"FINAL LOCKED PROFIT: ${profit:.2f}")
-    qty_yes = qty_no = cost_yes = cost_no = 0
-    return profit
+    r = requests.post("https://clob.polymarket.com/order", json=order, timeout=10)
+    if r.status_code == 200:
+        print(f"  SUCCESS: {side} ${usd_amount} ဝယ်ပြီး")
+        return amount
+    else:
+        print(f"  FAILED: {r.text[:100]}")
+        return 0
 
 async def main():
     global qty_yes, qty_no, cost_yes, cost_no
-    
+
     uri = "wss://clob.polymarket.com/ws"
     async with websockets.connect(uri) as ws:
-        await ws.send(json.dumps({
-            "method": "subscribe",
-            "channel": "book",
-            "market": MARKET
-        }))
-        
-        print("Gabagool Pro Bot 2025 စတင်ပြီး! အမြတ်လော့ခ်ချဖို့ စောင့်နေသည်...")
-        
+        await ws.send(json.dumps({"method":"subscribe","channel":"book","market":MARKET}))
+        print("Bot စတင်ပြီး... $1 စမ်းနေသည်။ Ctrl+C နှိပ်ရင် ရပ်မယ်။")
+
         while True:
-            try:
-                msg = json.loads(await ws.recv())
-                if "book" not in msg: continue
-                
-                asks = msg["book"]["asks"]
-                yes_price = float(asks[0][0])  # YES ask
-                no_price  = float(asks[1][0])  # NO ask
-                
-                pair_cost = get_pair_cost()
-                exposure = cost_yes + cost_no
-                locked = min(qty_yes, qty_no) - exposure
-                
-                print(f"\rYES {yes_price:.4f} | NO {no_price:.4f} | Pair {pair_cost:.4f} | Exp ${exposure:,.0f} | Lock ${locked:+.1f}", end="")
-                
-                # AUTO-EXIT
-                if locked >= MIN_PROFIT_TO_EXIT:
-                    await cancel_and_exit()
-                    print("ထပ်စရန် Enter နှိပ်ပါ...")
-                    input()
-                    continue
-                
-                # AUTO-BUY logic
-                if exposure >= MAX_EXPOSURE:
-                    continue
-                    
-                for side, price in [("YES", yes_price), ("NO", no_price)]:
-                    if exposure + 50 >= MAX_EXPOSURE: break
-                        
-                    test_amount = 400 / price
-                    if side == "YES":
-                        new_avg = (cost_yes + test_amount * price) / (qty_yes + test_amount) if qty_yes + test_amount > 0 else price
-                        projected = new_avg + (cost_no / qty_no if qty_no else 0)
-                    else:
-                        new_avg = (cost_no + test_amount * price) / (qty_no + test_amount) if qty_no + test_amount > 0 else price
-                        projected = new_avg + (cost_yes / qty_yes if qty_yes else 0)
-                    
-                    if projected < TARGET_PAIR_COST:
-                        amount = min(800, (MAX_EXPOSURE - exposure) * 0.9) / price
-                        amount = round(amount, 2)
-                        
-                        if await place_order(side, price, amount):
-                            if side == "YES":
-                                qty_yes += amount
-                                cost_yes += amount * price
-                            else:
-                                qty_no += amount
-                                cost_no += amount * price
-                            print(f"  BOUGHT {amount:.1f} {side} @ {price:.4f} → Pair {get_pair_cost():.4f}")
-                
-                await asyncio.sleep(0.35)
-                
-            except Exception as e:
-                print("Error:", e)
-                await asyncio.sleep(1)
+            msg = json.loads(await ws.recv())
+            if "book" not in msg: continue
+            asks = msg["book"]["asks"]
+            yes_price = float(asks[0][0])
+            no_price  = float(asks[1][0])
+
+            pair = get_pair_cost()
+            exposure = cost_yes + cost_no
+            locked = min(qty_yes, qty_no) - exposure
+
+            print(f"\rYES {yes_price:.3f} | NO {no_price:.3f} | Pair {pair:.3f} | Exp ${exposure:.2f} | Lock ${locked:+.2f}", end="")
+
+            # အမြတ်ရပြီဆိုရင် ချက်ချင်းထွက်
+            if locked >= MIN_PROFIT_TO_EXIT:
+                print(f"\nSUCCESS: ${locked:.2f} အမြတ်ရပြီး! Bot ရပ်တယ်။")
+                break
+
+            if exposure >= MAX_EXPOSURE:
+                continue
+
+            # $1 ပဲ ဝယ်မယ်
+            for side, price in [("YES", yes_price), ("NO", no_price)]:
+                if exposure >= MAX_EXPOSURE: break
+
+                # ဝယ်ရင် Pair Cost ဘယ်လောက်ဖြစ်မလဲ?
+                test_usd = 1.0
+                test_shares = test_usd / price
+                if side == "YES":
+                    new_avg = (cost_yes + test_usd) / (qty_yes + test_shares)
+                    proj = new_avg + (cost_no/qty_no if qty_no else 0)
+                else:
+                    new_avg = (cost_no + test_usd) / (qty_no + test_shares)
+                    proj = new_avg + (cost_yes/qty_yes if qty_yes else 0)
+
+                if proj < TARGET_PAIR_COST:
+                    shares = await place_order(side, price, 1.0)
+                    if shares > 0:
+                        if side == "YES":
+                            qty_yes += shares; cost_yes += 1.0
+                        else:
+                            qty_no += shares; cost_no += 1.0
+
+            await asyncio.sleep(0.5)
 
 if __name__ == "__main__":
     asyncio.run(main())
