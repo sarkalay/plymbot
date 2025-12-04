@@ -63,9 +63,20 @@ async def place_order(side: str, price: float, usd_amount: float):
 async def main():
     global qty_yes, qty_no, cost_yes, cost_no
 
-    uri = "wss://clob.polymarket.com/ws"
+    uri = "wss://ws-subscriptions-clob.polymarket.com/ws/"
     async with websockets.connect(uri) as ws:
-        await ws.send(json.dumps({"method":"subscribe","channel":"book","market":MARKET}))
+    # အသစ်ထည့်ရမယ့် နေရာ (ဒီလိုင်း ၂ လိုင်း ထည့်ပါ)
+    await ws.send(json.dumps({
+        "method": "subscribe",
+        "channel": "book",
+        "market": MARKET,
+        "auth": {
+            "key": API_KEY,
+            "secret": os.getenv("API_SECRET"),
+            "passphrase": os.getenv("PASSPHRASE")
+        }
+    }))
+    print(f"Subscribed to market: {MARKET}")
         print("Bot စတင်ပြီး... $1 စမ်းနေသည်။ Ctrl+C နှိပ်ရင် ရပ်မယ်။")
 
         while True:
