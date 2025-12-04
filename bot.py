@@ -30,7 +30,8 @@ qty_yes = qty_no = cost_yes = cost_no = 0.0
 sk = SigningKey.from_string(bytes.fromhex(PRIVATE_KEY_HEX), curve=SECP256k1)
 
 def get_pair_cost():
-    if qty_yes + qty_no == 0: return 999
+    if qty_yes + qty_no == 0: 
+        return 999
     return (cost_yes/qty_yes if qty_yes else 0) + (cost_no/qty_no if qty_no else 0)
 
 def sign_order(order):
@@ -65,23 +66,26 @@ async def main():
 
     uri = "wss://ws-subscriptions-clob.polymarket.com/ws/"
     async with websockets.connect(uri) as ws:
-    # အသစ်ထည့်ရမယ့် နေရာ (ဒီလိုင်း ၂ လိုင်း ထည့်ပါ)
-    await ws.send(json.dumps({
-        "method": "subscribe",
-        "channel": "book",
-        "market": MARKET,
-        "auth": {
-            "key": API_KEY,
-            "secret": os.getenv("API_SECRET"),
-            "passphrase": os.getenv("PASSPHRASE")
-        }
-    }))
-    print(f"Subscribed to market: {MARKET}")
+        # WebSocket subscription ပို့ရန်
+        await ws.send(json.dumps({
+            "method": "subscribe",
+            "channel": "book",
+            "market": MARKET,
+            "auth": {
+                "key": API_KEY,
+                "secret": os.getenv("API_SECRET"),
+                "passphrase": os.getenv("PASSPHRASE")
+            }
+        }))
+        
+        print(f"Subscribed to market: {MARKET}")
         print("Bot စတင်ပြီး... $1 စမ်းနေသည်။ Ctrl+C နှိပ်ရင် ရပ်မယ်။")
 
         while True:
             msg = json.loads(await ws.recv())
-            if "book" not in msg: continue
+            if "book" not in msg: 
+                continue
+            
             asks = msg["book"]["asks"]
             yes_price = float(asks[0][0])
             no_price  = float(asks[1][0])
@@ -102,7 +106,8 @@ async def main():
 
             # $1 ပဲ ဝယ်မယ်
             for side, price in [("YES", yes_price), ("NO", no_price)]:
-                if exposure >= MAX_EXPOSURE: break
+                if exposure >= MAX_EXPOSURE: 
+                    break
 
                 # ဝယ်ရင် Pair Cost ဘယ်လောက်ဖြစ်မလဲ?
                 test_usd = 1.0
@@ -118,9 +123,11 @@ async def main():
                     shares = await place_order(side, price, 1.0)
                     if shares > 0:
                         if side == "YES":
-                            qty_yes += shares; cost_yes += 1.0
+                            qty_yes += shares
+                            cost_yes += 1.0
                         else:
-                            qty_no += shares; cost_no += 1.0
+                            qty_no += shares
+                            cost_no += 1.0
 
             await asyncio.sleep(0.5)
 
